@@ -10,6 +10,374 @@ const API = `${BACKEND_URL}/api`;
 // Socket.IO connection
 let socket;
 
+// Card component
+const Card = ({ card, onClick, selected, disabled }) => {
+  const suitSymbols = {
+    'oros': '🪙',
+    'copas': '🏆',
+    'espadas': '⚔️',
+    'bastos': '🪄'
+  };
+
+  const suitColors = {
+    'oros': 'text-yellow-600',
+    'copas': 'text-red-500',
+    'espadas': 'text-gray-700',
+    'bastos': 'text-green-600'
+  };
+
+  return (
+    <div
+      className={`playing-card ${selected ? 'selected' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} 
+        w-16 h-24 bg-white rounded-lg border-2 ${selected ? 'border-blue-500 transform -translate-y-2' : 'border-gray-300'} 
+        flex flex-col items-center justify-center text-sm font-bold transition-all duration-200 hover:transform hover:-translate-y-1 shadow-md`}
+      onClick={disabled ? undefined : onClick}
+    >
+      <div className={suitColors[card.suit] || 'text-gray-700'}>
+        {suitSymbols[card.suit] || '?'}
+      </div>
+      <div className="text-gray-800">
+        {card.rank === 'sota' ? 'J' : card.rank === 'caballo' ? 'Q' : card.rank === 'rey' ? 'K' : card.rank}
+      </div>
+    </div>
+  );
+};
+
+// Chat component
+const ChatComponent = ({ matchId, currentUser }) => {
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+
+  useEffect(() => {
+    if (socket) {
+      socket.on("chat_message", (message) => {
+        setMessages(prev => [...prev, message]);
+      });
+
+      // Load existing messages
+      loadMessages();
+    }
+
+    return () => {
+      if (socket) {
+        socket.off("chat_message");
+      }
+    };
+  }, [matchId]);
+
+  const loadMessages = async () => {
+    try {
+      const response = await axios.get(`${API}/matches/${matchId}/chat`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      });
+      setMessages(response.data);
+    } catch (error) {
+      console.error("Error loading messages:", error);
+    }
+  };
+
+  const sendMessage = (e) => {
+    e.preventDefault();
+    if (newMessage.trim() && socket) {
+      socket.emit("send_chat_message", {
+        match_id: matchId,
+        user_id: currentUser.id,
+        content: newMessage.trim()
+      });
+      setNewMessage("");
+    }
+  };
+
+  return (
+    <div className="bg-slate-800/80 backdrop-blur-xl rounded-xl p-4 h-64 flex flex-col">
+      <h3 className="text-sm font-semibold text-white mb-2">Chat</h3>
+      
+      <div className="flex-1 overflow-y-auto mb-3 space-y-1">
+        {messages.map((msg) => (
+          <div key={msg.id} className="text-sm">
+            <span className={`font-medium ${msg.user_id === currentUser.id ? 'text-blue-400' : 'text-slate-300'}`}>
+              {msg.username}:
+            </span>
+            <span className="text-slate-400 ml-1">{msg.content}</span>
+          </div>
+        ))}
+      </div>
+      
+      <form onSubmit={sendMessage} className="flex">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Type a message..."
+          className="flex-1 px-3 py-1 bg-slate-700 border border-slate-600 rounded-l-lg text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+        />
+        <button
+          type="submit"
+          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-r-lg text-sm transition-colors"
+        >
+          Send
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// Game Room Component
+const GameRoom = ({ matchId, user, onLeaveMatch }) => {
+  const [gameState, setGameState] = useState(null);
+  const [match, setMatch] = useState(null);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (socket && matchId) {
+      // Join match room
+      socket.emit("join_match_room", { 
+        match_id: matchId, 
+        user_id: user.id 
+      });
+
+      // Listen for game state updates
+      socket.on("match_state", (data) => {
+        console.log("Game state update:", data);
+        setGameState(data.state);
+        setLoading(false);
+      });
+
+      socket.on("error", (errorData) => {
+        setError(errorData.message);
+        setTimeout(() => setError(null), 3000);
+      });
+
+      // Load initial match data
+      loadMatchData();
+    }
+
+    return () => {
+      if (socket) {
+        socket.off("match_state");
+        socket.off("error");
+        if (matchId) {
+          socket.emit("leave_match_room", { match_id: matchId });
+        }
+      }
+    };
+  }, [matchId, user.id]);
+
+  const loadMatchData = async () => {
+    try {
+      const response = await axios.get(`${API}/matches/${matchId}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      });
+      setMatch(response.data);
+    } catch (error) {
+      console.error("Error loading match:", error);
+      setError("Failed to load match data");
+    }
+  };
+
+  const handleGameAction = (action, payload = {}) => {
+    if (socket && gameState) {
+      socket.emit("game_action", {
+        match_id: matchId,
+        user_id: user.id,
+        action: action,
+        payload: payload
+      });
+    }
+  };
+
+  const handleCardClick = (card) => {
+    if (gameState?.phase === "discard" && gameState?.current_turn === user.id) {
+      setSelectedCard(card);
+    }
+  };
+
+  const handleDiscard = () => {
+    if (selectedCard) {
+      handleGameAction("discard", { card_id: selectedCard.id });
+      setSelectedCard(null);
+    }
+  };
+
+  const handleDrawStock = () => {
+    handleGameAction("draw_stock");
+  };
+
+  const handleDrawDiscard = () => {
+    handleGameAction("draw_discard");
+  };
+
+  const handleClose = () => {
+    if (window.confirm("Are you sure you want to close the game?")) {
+      handleGameAction("close");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading game...</div>
+      </div>
+    );
+  }
+
+  if (!gameState || !match) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <div className="text-xl mb-4">Waiting for game to start...</div>
+          <button 
+            onClick={onLeaveMatch}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors"
+          >
+            Leave Match
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const currentPlayer = gameState.players?.[user.id];
+  const isMyTurn = gameState.current_turn === user.id;
+  const canDraw = gameState.phase === "draw" && isMyTurn;
+  const canDiscard = gameState.phase === "discard" && isMyTurn && selectedCard;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+      {/* Header */}
+      <div className="bg-slate-800/80 backdrop-blur-xl border-b border-slate-700/50 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-white">Chinchón Game</h1>
+            <p className="text-slate-400 text-sm">Target: {match.target_points} points • Stake: ${match.stake_amount}</p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className={`text-sm px-3 py-1 rounded-full ${isMyTurn ? 'bg-green-500/20 text-green-400' : 'bg-slate-600/20 text-slate-400'}`}>
+              {isMyTurn ? 'Your Turn' : 'Opponent\'s Turn'}
+            </div>
+            <button 
+              onClick={onLeaveMatch}
+              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
+            >
+              Leave
+            </button>
+          </div>
+        </div>
+        
+        {error && (
+          <div className="mt-2 p-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Game Area */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Table Area */}
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50">
+            <div className="grid grid-cols-2 gap-8 mb-6">
+              {/* Stock Pile */}
+              <div className="text-center">
+                <h3 className="text-sm font-semibold text-white mb-2">Stock Pile</h3>
+                <div 
+                  onClick={canDraw ? handleDrawStock : undefined}
+                  className={`w-16 h-24 bg-blue-800 border-2 border-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm mx-auto
+                    ${canDraw ? 'cursor-pointer hover:bg-blue-700 hover:transform hover:-translate-y-1' : 'opacity-50'}
+                    transition-all duration-200`}
+                >
+                  {gameState.deck?.length || 0}
+                </div>
+              </div>
+              
+              {/* Discard Pile */}
+              <div className="text-center">
+                <h3 className="text-sm font-semibold text-white mb-2">Discard Pile</h3>
+                {gameState.discard_pile && gameState.discard_pile.length > 0 ? (
+                  <div onClick={canDraw ? handleDrawDiscard : undefined}>
+                    <Card 
+                      card={gameState.discard_pile[gameState.discard_pile.length - 1]} 
+                      disabled={!canDraw}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-16 h-24 bg-gray-200 border-2 border-gray-300 rounded-lg mx-auto opacity-50"></div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            {isMyTurn && (
+              <div className="flex justify-center space-x-4 mb-6">
+                {gameState.phase === "discard" && (
+                  <>
+                    <button
+                      onClick={handleDiscard}
+                      disabled={!canDiscard}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+                    >
+                      Discard {selectedCard ? 'Selected Card' : '(Select a card)'}
+                    </button>
+                    <button
+                      onClick={handleClose}
+                      className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl transition-colors"
+                    >
+                      Close Game
+                    </button>
+                  </>
+                )}
+                {gameState.phase === "draw" && (
+                  <div className="text-center">
+                    <p className="text-slate-400 text-sm mb-2">Choose a pile to draw from</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Current Player's Hand */}
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-4">Your Hand ({currentPlayer?.hand?.length || 0} cards)</h3>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {currentPlayer?.hand?.map((card) => (
+                  <Card
+                    key={card.id}
+                    card={card}
+                    selected={selectedCard?.id === card.id}
+                    onClick={() => handleCardClick(card)}
+                    disabled={!isMyTurn || gameState.phase !== "discard"}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Game Status */}
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-xl p-4 border border-slate-700/50">
+            <div className="grid grid-cols-2 gap-4 text-center">
+              {match.players.map((playerId, index) => (
+                <div key={playerId} className="text-white">
+                  <div className="text-sm text-slate-400">Player {index + 1}</div>
+                  <div className="font-semibold">{playerId === user.id ? 'You' : 'Opponent'}</div>
+                  <div className="text-xs text-slate-500">
+                    {gameState.players?.[playerId]?.hand?.length || 0} cards
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Chat Sidebar */}
+        <div className="lg:col-span-1">
+          <ChatComponent matchId={matchId} currentUser={user} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Auth Components
 const AuthScreen = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -151,7 +519,7 @@ const AuthScreen = ({ onLogin }) => {
   );
 };
 
-// Lobby Component
+// Lobby Component  
 const Lobby = ({ user, onJoinMatch }) => {
   const [matches, setMatches] = useState([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -196,11 +564,16 @@ const Lobby = ({ user, onJoinMatch }) => {
 
   const joinMatch = async (matchId) => {
     try {
-      await axios.post(`${API}/matches/${matchId}/join`, {}, {
+      const response = await axios.post(`${API}/matches/${matchId}/join`, {}, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
       
-      onJoinMatch(matchId);
+      if (response.data.match && response.data.match.status === 'playing') {
+        onJoinMatch(matchId);
+      } else {
+        // Match is waiting for more players
+        fetchMatches();
+      }
     } catch (error) {
       alert(error.response?.data?.detail || "Failed to join match");
     }
@@ -334,19 +707,6 @@ const Lobby = ({ user, onJoinMatch }) => {
   );
 };
 
-// Game Component (placeholder)
-const GameRoom = ({ matchId, user }) => {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
-      <div className="text-center text-white">
-        <h1 className="text-2xl font-bold mb-4">Game Room</h1>
-        <p>Match ID: {matchId}</p>
-        <p>Game interface coming soon...</p>
-      </div>
-    </div>
-  );
-};
-
 // Main App
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -396,9 +756,6 @@ function App() {
 
   const handleJoinMatch = (matchId) => {
     setCurrentMatch(matchId);
-    if (socket) {
-      socket.emit("join_match_room", { match_id: matchId });
-    }
   };
 
   const handleLeaveMatch = () => {
