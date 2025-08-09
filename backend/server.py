@@ -20,10 +20,18 @@ from enum import Enum
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
+# MongoDB Atlas connection
 mongo_url = os.environ['MONGO_URL']
+# Use the database name from environment or extract from connection string
+db_name = os.environ.get('DB_NAME')
+if not db_name:
+    # Extract database name from MongoDB Atlas connection string if not provided
+    import urllib.parse
+    parsed_url = urllib.parse.urlparse(mongo_url)
+    db_name = parsed_url.path.lstrip('/') or 'chinchon_game'
+
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[db_name]
 
 # JWT Configuration
 SECRET_KEY = "your-secret-key-change-in-production"
