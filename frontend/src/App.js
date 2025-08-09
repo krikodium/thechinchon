@@ -728,9 +728,25 @@ function App() {
         setUser(response.data);
         setIsAuthenticated(true);
         
-        // Initialize socket connection
+        // Initialize socket connection with proper configuration
         if (!socket) {
-          socket = io(BACKEND_URL);
+          socket = io(BACKEND_URL, {
+            transports: ['websocket', 'polling'],
+            timeout: 10000,
+            forceNew: true
+          });
+          
+          socket.on('connect', () => {
+            console.log('Socket.IO connected:', socket.id);
+          });
+          
+          socket.on('disconnect', () => {
+            console.log('Socket.IO disconnected');
+          });
+          
+          socket.on('connect_error', (error) => {
+            console.error('Socket.IO connection error:', error);
+          });
         }
       } catch (error) {
         localStorage.removeItem("token");
