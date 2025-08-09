@@ -51,7 +51,15 @@ const ChatComponent = ({ matchId, currentUser }) => {
   useEffect(() => {
     if (socket) {
       socket.on("chat_message", (message) => {
-        setMessages(prev => [...prev, message]);
+        console.log("Received chat message:", message);
+        setMessages(prev => {
+          // Avoid duplicates
+          const exists = prev.some(msg => msg.id === message.id);
+          if (!exists) {
+            return [...prev, message];
+          }
+          return prev;
+        });
       });
 
       // Load existing messages
