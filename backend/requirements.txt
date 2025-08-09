@@ -7,3 +7,4 @@ bcrypt
 python-jose[cryptography]
 python-socketio
 python-multipart
+pymongo[srv]
