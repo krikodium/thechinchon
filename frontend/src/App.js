@@ -141,22 +141,32 @@ const GameRoom = ({ matchId, user, onLeaveMatch }) => {
       // Listen for game state updates
       socket.on("match_state", (data) => {
         console.log("Game state update:", data);
-        setGameState(data.state);
-        setLoading(false);
+        if (data.state && Object.keys(data.state).length > 0) {
+          setGameState(data.state);
+          setLoading(false);
+        }
+      });
+
+      socket.on("joined_room", (data) => {
+        console.log("Joined room:", data);
+        // After joining room, load match data
+        loadMatchData();
       });
 
       socket.on("error", (errorData) => {
+        console.error("Socket error:", errorData);
         setError(errorData.message);
         setTimeout(() => setError(null), 3000);
       });
 
-      // Load initial match data
+      // Load initial match data immediately
       loadMatchData();
     }
 
     return () => {
       if (socket) {
         socket.off("match_state");
+        socket.off("joined_room");
         socket.off("error");
         if (matchId) {
           socket.emit("leave_match_room", { match_id: matchId });
