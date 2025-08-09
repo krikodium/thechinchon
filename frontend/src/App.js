@@ -180,10 +180,20 @@ const GameRoom = ({ matchId, user, onLeaveMatch }) => {
       const response = await axios.get(`${API}/matches/${matchId}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
-      setMatch(response.data);
+      const matchData = response.data;
+      setMatch(matchData);
+      
+      // If match has game state, use it
+      if (matchData.game_state && Object.keys(matchData.game_state).length > 0) {
+        setGameState(matchData.game_state);
+        setLoading(false);
+      }
+      
+      console.log("Match data loaded:", matchData);
     } catch (error) {
       console.error("Error loading match:", error);
       setError("Failed to load match data");
+      setLoading(false);
     }
   };
 
