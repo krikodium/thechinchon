@@ -191,7 +191,7 @@ class ChinchonAPITester:
             "Unauthorized Access (should fail)",
             "GET",
             "auth/me",
-            401  # Should return 401 for unauthorized access
+            403  # FastAPI returns 403 for unauthorized access
         )
         
         # Restore token
