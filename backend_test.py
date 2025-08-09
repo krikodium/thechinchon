@@ -207,7 +207,7 @@ class ChinchonAPITester:
             200,
             data={
                 "target_points": 50,
-                "stake_amount": 100
+                "stake_amount": 0  # Use 0 stake since user starts with 0 balance
             }
         )
         
