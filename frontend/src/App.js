@@ -42,11 +42,14 @@ const AuthScreen = ({ onLogin }) => {
         ? { username, password }
         : { username, password, avatar: selectedAvatar };
 
+      console.log("Submitting to:", endpoint, "with payload:", payload);
       const response = await axios.post(endpoint, payload);
       
+      console.log("Response received:", response.data);
       localStorage.setItem("token", response.data.access_token);
       onLogin();
     } catch (error) {
+      console.error("Authentication error:", error);
       alert(error.response?.data?.detail || "Authentication failed");
     }
     setLoading(false);
