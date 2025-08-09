@@ -35,7 +35,7 @@ sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins="*",
     logger=True,
-    engineio_logger=True
+    engineio_logger=False
 )
 
 # FastAPI app
